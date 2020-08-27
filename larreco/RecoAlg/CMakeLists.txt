@@ -21,6 +21,7 @@ add_subdirectory(ImagePatternAlgs)
 add_subdirectory(PMAlg)
 add_subdirectory(TCAlg)
 add_subdirectory(xml)
+add_subdirectory(MCRecoUtils)
 
 install_headers()
 install_fhicl()

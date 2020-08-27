@@ -44,6 +44,7 @@
 #include "lardataobj/Simulation/AuxDetSimChannel.h"
 #include "larsim/MCCheater/BackTrackerService.h"
 #include "larsim/MCCheater/ParticleInventoryService.h"
+#include "lardata/DetectorInfoServices/DetectorClocksService.h"
 #include "lardataobj/RecoBase/Track.h"
 #include "lardataobj/RecoBase/Cluster.h"
 #include "lardataobj/RecoBase/Hit.h"
@@ -84,6 +85,7 @@ class ana::ShowerValidation : public art::EDAnalyzer {
 
     void ClusterValidation(std::vector<art::Ptr<recob::Cluster> >& clusters,
         const art::Event& evt,
+        const detinfo::DetectorClocksData& clockData,
         art::Handle<std::vector<recob::Cluster> >& clusterHandle,
         std::map<int,std::vector<int> >& ShowerMotherTrackIDs,
         std::map<int,float>& MCTrack_Energy_map,
@@ -95,6 +97,7 @@ class ana::ShowerValidation : public art::EDAnalyzer {
     void PFPValidation(std::vector<art::Ptr<recob::Cluster> >& clusters,
         art::Ptr<recob::PFParticle>  pfp,
         const art::Event& evt,
+        const detinfo::DetectorClocksData& clockData,
         art::Handle<std::vector<recob::Cluster> >& clusterHandle,
         std::map<int,std::vector<int> >& ShowerMotherTrackIDs,
         std::map<int,float>& MCTrack_Energy_map,
@@ -492,6 +495,7 @@ void ana::ShowerValidation::analyze(const art::Event& evt) {
 
   float trueShowerEnergy=-99999999;
 
+  auto const clockData = art::ServiceHandle<detinfo::DetectorClocksService const>()->DataFor(evt);
   if(fMatchShowersInTruth){
 
     //Get the MC Energy deposited for each MC track.
@@ -535,7 +539,7 @@ void ana::ShowerValidation::analyze(const art::Event& evt) {
 
 
     //Cut on shower mothers with density
-    ShowerUtils::CutShowerMothersByDensity(showerMothers, trueParticles, hits, fDensityCut);
+    ShowerUtils::CutShowerMothersByDensity(clockData, showerMothers, trueParticles, hits, fDensityCut);
     eNumTrueShowersviaDCut_TreeVal = showerMothers.size();
     for (auto const& showerMother: showerMothers){
       const simb::MCParticle* showerMotherParticle = trueParticles.at(showerMother.first);
@@ -583,7 +587,7 @@ void ana::ShowerValidation::analyze(const art::Event& evt) {
 
 
       //Get a map of the number of hits per plane each track has deposited.
-      MCTrack_hit_map[handle.id()] = RecoUtils::NumberofPlaneHitsPerTrack(hits_fromhandle);
+      MCTrack_hit_map[handle.id()] = RecoUtils::NumberofPlaneHitsPerTrack(clockData, hits_fromhandle);
     }
   }
 
@@ -611,7 +615,7 @@ void ana::ShowerValidation::analyze(const art::Event& evt) {
       //Calculate how much energy was deposited in the hits
       for(geo::PlaneID plane_id: geom->IteratePlaneIDs()){
 
-        float TotalEnergyDepinHits = RecoUtils::TotalEnergyDepinHits(hits,plane_id.Plane);
+        float TotalEnergyDepinHits = RecoUtils::TotalEnergyDepinHits(clockData, hits,plane_id.Plane);
         float hitCompleteness = TotalEnergyDepinHits!=0 ? TotalEnergyDepinHits/TotalEnergyDeposited : -99999;
         hEnergyComp_TreeVal[fHitModuleLabel][plane_id.Plane].push_back(hitCompleteness);
       }
@@ -715,7 +719,7 @@ void ana::ShowerValidation::analyze(const art::Event& evt) {
               evt.get(fmpfc.at(0).front().id(),clusterHandle);
               if(clusterHandle.isValid()){
                 std::vector<art::Ptr<recob::Cluster> > pfpClusters = fmpfc.at(daughter.key());
-                ana::ShowerValidation::PFPValidation(pfpClusters,daughter,evt,clusterHandle,showerMothers,MCTrack_Energy_map,MCTrack_hit_map,fShowerModuleLabel);
+                ana::ShowerValidation::PFPValidation(pfpClusters,daughter,evt,clockData, clusterHandle,showerMothers,MCTrack_Energy_map,MCTrack_hit_map,fShowerModuleLabel);
               }
             }
           }
@@ -878,7 +882,7 @@ void ana::ShowerValidation::analyze(const art::Event& evt) {
       //################################################
 
       //Function from RecoUtils, finds the most probable track ID associated with the set of hits from there true energy depositons. The pair returns the energy as well.
-      std::pair<int,double> ShowerTrackInfo = ShowerUtils::TrueParticleIDFromTrueChain(showerMothers,showerhits,ShowerBest_Plane);
+      std::pair<int,double> ShowerTrackInfo = ShowerUtils::TrueParticleIDFromTrueChain(clockData, showerMothers,showerhits,ShowerBest_Plane);
 
       int ShowerTrackID = ShowerTrackInfo.first;
       double TrueEnergyDepWithinShower_FromTrueShower = ShowerTrackInfo.second;
@@ -905,7 +909,7 @@ void ana::ShowerValidation::analyze(const art::Event& evt) {
         }
 
         //Get the number of hits in the reco shower from the true shower.
-        std::map<int,std::map<geo::PlaneID,int> >  MCTrack_showerhit_map = RecoUtils::NumberofPlaneHitsPerTrack(showerhits);
+        std::map<int,std::map<geo::PlaneID,int> >  MCTrack_showerhit_map = RecoUtils::NumberofPlaneHitsPerTrack(clockData, showerhits);
         for(auto const& planehit_map : MCTrack_showerhit_map){
           if(std::find(showerMothers[ShowerTrackID].begin(), showerMothers[ShowerTrackID].end(),planehit_map.first) == showerMothers[ShowerTrackID].end()){continue;}
           for(auto const& hit_num : planehit_map.second){
@@ -924,7 +928,7 @@ void ana::ShowerValidation::analyze(const art::Event& evt) {
           continue;
 
         //Split the Hit into its IDE for each track it associates with.
-        std::vector<sim::TrackIDE> trackIDEs = backtracker->HitToTrackIDEs(hitIt);
+        std::vector<sim::TrackIDE> trackIDEs = backtracker->HitToTrackIDEs(clockData, hitIt);
         for (auto const& trackIDE: trackIDEs){
 
           //Find the true total energy deposited in a set of hits.
@@ -1009,19 +1013,19 @@ void ana::ShowerValidation::analyze(const art::Event& evt) {
         if(fMatchShowersInTruth){
           //Where do the hits come from
           std::pair<int, double>  showerInitialTrackInfo = ShowerUtils::TrueParticleIDFromTrueChain(
-              showerMothers, initialtrackhits, ShowerBest_Plane);
+              clockData, showerMothers, initialtrackhits, ShowerBest_Plane);
 
           if (showerInitialTrackInfo.first != ShowerTrackInfo.first){
             continue;
           }
 
           initialtrack_energy_from_mother = showerInitialTrackInfo.second;
-          initialtrack_energy = RecoUtils::TotalEnergyDepinHits(initialtrackhits, ShowerBest_Plane);
+          initialtrack_energy = RecoUtils::TotalEnergyDepinHits(clockData, initialtrackhits, ShowerBest_Plane);
           true_energy_initialTrack = MCTrack_Energy_map.at(ShowerTrackID);
 
           if(trueParticles[ShowerTrackID]->PdgCode() == 11){
-            initialtrack_hits_from_mother = RecoUtils::NumberofPrimaryHitsFromTrack(ShowerTrackID,initialtrackhits);
-            true_num_hits_initialTrack = RecoUtils::NumberofPrimaryHitsFromTrack(ShowerTrackID,showerhits);
+            initialtrack_hits_from_mother = RecoUtils::NumberofPrimaryHitsFromTrack(clockData, ShowerTrackID,initialtrackhits);
+            true_num_hits_initialTrack = RecoUtils::NumberofPrimaryHitsFromTrack(clockData, ShowerTrackID,showerhits);
           } else {
             //Get the ee+ pair daughters from the photon.
             std::vector<int> Electrons;
@@ -1030,8 +1034,8 @@ void ana::ShowerValidation::analyze(const art::Event& evt) {
                 Electrons.push_back(daughter);
               }
             }
-            initialtrack_hits_from_mother = RecoUtils::NumberofPrimaryHitsWithAllTracks(Electrons,initialtrackhits);
-            true_num_hits_initialTrack    = RecoUtils::NumberofPrimaryHitsWithAllTracks(Electrons,showerhits);
+            initialtrack_hits_from_mother = RecoUtils::NumberofPrimaryHitsWithAllTracks(clockData, Electrons, initialtrackhits);
+            true_num_hits_initialTrack    = RecoUtils::NumberofPrimaryHitsWithAllTracks(clockData, Electrons, showerhits);
           }
         }
 
@@ -1070,7 +1074,7 @@ void ana::ShowerValidation::analyze(const art::Event& evt) {
         int shower_pdg = MCShowerParticle->PdgCode();
 
         //Check if another particle actually gave more energy.
-        int MostHitsTrackID = TMath::Abs(RecoUtils::TrueParticleIDFromTotalRecoHits(showerhits));
+        int MostHitsTrackID = TMath::Abs(RecoUtils::TrueParticleIDFromTotalRecoHits(clockData, showerhits));
         int most_hit_pdg = -99999;
         if(trueParticles.find(MostHitsTrackID) != trueParticles.end()){
           most_hit_pdg = trueParticles.at(MostHitsTrackID)->PdgCode();
@@ -1165,7 +1169,7 @@ void ana::ShowerValidation::analyze(const art::Event& evt) {
               //Get the true position
               std::vector<double> hitXYZ = {-999,-999,-999};
               try{
-                hitXYZ = backtracker->HitToXYZ(hit[0]);
+                hitXYZ = backtracker->HitToXYZ(clockData, hit[0]);
               }
               catch(...){
                 if(fVerbose>2){std::cout << "Noise Hit" << std::endl;}
@@ -1316,7 +1320,7 @@ void ana::ShowerValidation::analyze(const art::Event& evt) {
           evt.get(fmch.at(shower.key()).front().id(),clusterHandle);
           if(clusterHandle.isValid()){
             std::vector<art::Ptr<recob::Cluster> > showerclusters = fmch.at(shower.key());
-            ana::ShowerValidation::ClusterValidation(showerclusters,evt,clusterHandle,showerMothers,MCTrack_Energy_map,MCTrack_hit_map,ShowerTrackID,trueShowerEnergy,fShowerModuleLabel);
+            ana::ShowerValidation::ClusterValidation(showerclusters,evt,clockData,clusterHandle,showerMothers,MCTrack_Energy_map,MCTrack_hit_map,ShowerTrackID,trueShowerEnergy,fShowerModuleLabel);
           }
           else{
             mf::LogError("ShowerValidation") << "Cluster handle is stale. No clustering validation done" << std::endl;
@@ -1333,7 +1337,7 @@ void ana::ShowerValidation::analyze(const art::Event& evt) {
               evt.get(fmcpf.at(0).front().id(),clusterHandle);
               if(clusterHandle.isValid()){
                 std::vector< art::Ptr<recob::Cluster> > showerclusters = fmcpf.at(shower.key());
-                ana::ShowerValidation::ClusterValidation(showerclusters,evt,clusterHandle,showerMothers,MCTrack_Energy_map,MCTrack_hit_map,ShowerTrackID,trueShowerEnergy,fShowerModuleLabel);
+                ana::ShowerValidation::ClusterValidation(showerclusters,evt,clockData,clusterHandle,showerMothers,MCTrack_Energy_map,MCTrack_hit_map,ShowerTrackID,trueShowerEnergy,fShowerModuleLabel);
               }
               else{
                 mf::LogError("ShowerValidation") << "Cluster handle is stale. No clustering validation done" << std::endl;
@@ -1488,6 +1492,7 @@ return;
 
 void ana::ShowerValidation::ClusterValidation(std::vector< art::Ptr<recob::Cluster> >& clusters,
     const art::Event& evt,
+    const detinfo::DetectorClocksData& clockData,
     art::Handle<std::vector<recob::Cluster> >& clusterHandle,
     std::map<int,std::vector<int> >& ShowerMotherTrackIDs,
     std::map<int,float>& MCTrack_Energy_map,
@@ -1532,7 +1537,7 @@ void ana::ShowerValidation::ClusterValidation(std::vector< art::Ptr<recob::Clust
 
     std::vector< art::Ptr<recob::Hit> > clusterhits = fmhc.at(cluster.key());
     //Function from RecoUtils, finds the most probable track ID associated with the set of hits from there true energy depositons. The pair returns the energy in the hits as well.
-    std::pair<int,double> ShowerTrackInfo = ShowerUtils::TrueParticleIDFromTrueChain(ShowerMotherTrackIDs,clusterhits, cluster->Plane().Plane);
+    std::pair<int,double> ShowerTrackInfo = ShowerUtils::TrueParticleIDFromTrueChain(clockData, ShowerMotherTrackIDs,clusterhits, cluster->Plane().Plane);
 
     //Make sure the cluster has been matched.
     if(ShowerTrackInfo.second == -99999){
@@ -1546,7 +1551,7 @@ void ana::ShowerValidation::ClusterValidation(std::vector< art::Ptr<recob::Clust
     float signalhits      = 0;
     float totalhits       = 0;
 
-    std::map<int, std::map<geo::PlaneID, int> > hitPlaneMap = RecoUtils::NumberofPlaneHitsPerTrack(clusterhits);
+    std::map<int, std::map<geo::PlaneID, int> > hitPlaneMap = RecoUtils::NumberofPlaneHitsPerTrack(clockData, clusterhits);
 
     for (auto const& daughterID: ShowerMotherTrackIDs[ShowerTrackInfo.first]) {
 
@@ -1586,7 +1591,7 @@ void ana::ShowerValidation::ClusterValidation(std::vector< art::Ptr<recob::Clust
     float completeness_energy = -99999;
     float purity_energy       = -99999;
 
-    float TotalEnergyDepinHits = RecoUtils::TotalEnergyDepinHits(clusterhits,cluster->Plane().Plane);
+    float TotalEnergyDepinHits = RecoUtils::TotalEnergyDepinHits(clockData, clusterhits,cluster->Plane().Plane);
 
     cProjectionMatchedEnergy_TreeVec[cluster->Plane().Plane].push_back(projection_match);
 
@@ -1634,6 +1639,7 @@ void ana::ShowerValidation::ClusterValidation(std::vector< art::Ptr<recob::Clust
 void ana::ShowerValidation::PFPValidation(std::vector<art::Ptr<recob::Cluster> >& clusters,
     art::Ptr<recob::PFParticle>  pfp,
     const art::Event& evt,
+    const detinfo::DetectorClocksData& clockData,
     art::Handle<std::vector<recob::Cluster> >& clusterHandle,
     std::map<int,std::vector<int> >& ShowerMotherTrackIDs,
     std::map<int,float>& MCTrack_Energy_map,
@@ -1675,10 +1681,10 @@ void ana::ShowerValidation::PFPValidation(std::vector<art::Ptr<recob::Cluster> >
   for(auto const& cluster : clusters){
     std::vector< art::Ptr<recob::Hit> > clusterhits = fmhc.at(cluster.key());
 
-    std::map<int, std::map<geo::PlaneID, int> > hitPlaneMap = RecoUtils::NumberofPlaneHitsPerTrack(clusterhits);
+    std::map<int, std::map<geo::PlaneID, int> > hitPlaneMap = RecoUtils::NumberofPlaneHitsPerTrack(clockData, clusterhits);
 
 
-    TotalEnergyDepinHits += RecoUtils::TotalEnergyDepinHits(clusterhits,cluster->Plane().Plane);
+    TotalEnergyDepinHits += RecoUtils::TotalEnergyDepinHits(clockData, clusterhits,cluster->Plane().Plane);
     pfphits      += clusterhits.size();
 
     std::pair<int,double> ShowerTrackInfo;
@@ -1688,7 +1694,7 @@ void ana::ShowerValidation::PFPValidation(std::vector<art::Ptr<recob::Cluster> >
     int pdg = abs(pfp->PdgCode()); // Track or shower
     if (pdg==11 || pdg==22) {
       //Function from RecoUtils, finds the most probable track ID associated with the set of hits from there true energy depositons. The pair returns the energy in the hits as well.
-      ShowerTrackInfo = ShowerUtils::TrueParticleIDFromTrueChain(ShowerMotherTrackIDs,clusterhits, cluster->Plane().Plane);
+      ShowerTrackInfo = ShowerUtils::TrueParticleIDFromTrueChain(clockData, ShowerMotherTrackIDs,clusterhits, cluster->Plane().Plane);
 
 
       //Make sure the cluster has been matched.
@@ -1702,7 +1708,7 @@ void ana::ShowerValidation::PFPValidation(std::vector<art::Ptr<recob::Cluster> >
       daughters = ShowerMotherTrackIDs[ShowerTrackInfo.first];
 
     } else {
-      int PFPTrackInfo = RecoUtils::TrueParticleIDFromTotalRecoHits(clusterhits);
+      int PFPTrackInfo = RecoUtils::TrueParticleIDFromTotalRecoHits(clockData, clusterhits);
 
       if(PFPTrackInfo == -99999){
         if (fVerbose>0){
@@ -1710,7 +1716,7 @@ void ana::ShowerValidation::PFPValidation(std::vector<art::Ptr<recob::Cluster> >
         }
         continue;
       }
-      double energy = RecoUtils::TotalEnergyDepinHitsFromTrack(clusterhits, PFPTrackInfo, cluster->Plane().Plane);//check with dom
+      double energy = RecoUtils::TotalEnergyDepinHitsFromTrack(clockData, clusterhits, PFPTrackInfo, cluster->Plane().Plane);//check with dom
       daughters = {PFPTrackInfo};
 
       ShowerTrackInfo = std::pair<int, double>(PFPTrackInfo,energy);
