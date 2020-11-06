@@ -1,5 +1,4 @@
 art_make(LIB_LIBRARIES
-           lardataalg_DetectorInfo
            larcorealg_Geometry
            larreco_RecoAlg_TCAlg
            larreco_RecoAlg_PMAlg
@@ -22,6 +21,7 @@ add_subdirectory(ImagePatternAlgs)
 add_subdirectory(PMAlg)
 add_subdirectory(TCAlg)
 add_subdirectory(xml)
+add_subdirectory(MCRecoUtils)
 
 install_headers()
 install_fhicl()
