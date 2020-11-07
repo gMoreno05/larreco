@@ -35,6 +35,8 @@
 #include "larcorealg/Geometry/PlaneGeo.h"
 #include "larcorealg/Geometry/WireGeo.h"
 
+#include "lardataalg/DetectorInfo/DetectorClocks.h"
+
 // c++
 #include <vector>
 #include <map>
