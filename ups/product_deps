@@ -7,8 +7,8 @@ fcldir product_dir job
 fwdir  product_dir config_data
 #
 product         version
-larsim		v09_07_00
-eigen		v3_3_5
+larsim		v09_10_01
+eigen		v3_3_9a
 cetbuildtools	v7_15_01	-	only_for_build
 end_product_list
 
